@@ -1,32 +1,29 @@
-from google import genai
-
-
-def generate_embeddings(client, chunks, model="gemini-embedding-001"):
+def generate_embeddings(client, documents, model="gemini-embedding-001"):
     """
-    Generate embeddings for a list of text chunks.
+    Generate embeddings for every document.
 
     Args:
         client: Gemini client.
-        chunks (list): List of text chunks.
+        documents (list): List of Document objects.
         model (str): Embedding model.
 
     Returns:
-        list: List of embeddings.
+        list: Updated Document objects.
     """
 
-    embeddings = []
+    print("\n🧠 Generating Embeddings...\n")
 
-    print("\nGenerating embeddings...\n")
-
-    for index, chunk in enumerate(chunks):
+    for index, document in enumerate(documents):
 
         response = client.models.embed_content(
             model=model,
-            contents=chunk
+            contents=document.text
         )
 
-        embeddings.append(response.embeddings[0].values)
+        document.embedding = response.embeddings[0].values
 
-        print(f"Processed Chunk {index + 1}/{len(chunks)}")
+        print(
+            f"✅ Document {index + 1}/{len(documents)} embedded."
+        )
 
-    return embeddings
+    return documents

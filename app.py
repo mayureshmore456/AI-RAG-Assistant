@@ -2,8 +2,10 @@ import os
 from dotenv import load_dotenv
 from google import genai
 
-from utils.pdf_reader import load_pdf
+from utils.pdf_loader import load_pdf
 from utils.chunker import create_chunks
+from utils.document_factory import create_documents
+from utils.embeddings import generate_embeddings
 
 # -----------------------------
 # Load Environment Variables
@@ -25,8 +27,6 @@ text, total_pages = load_pdf("sample.pdf")
 print("✅ PDF Loaded Successfully!")
 print(f"📄 Total Pages: {total_pages}")
 
-print("\n✅ Text Extracted Successfully!")
-
 # -----------------------------
 # Chunk Text
 # -----------------------------
@@ -39,12 +39,44 @@ chunks = create_chunks(
 print(f"\n📦 Total Chunks: {len(chunks)}")
 
 # -----------------------------
-# Display Chunks
+# Create Documents
 # -----------------------------
-for index, chunk in enumerate(chunks):
+documents = create_documents(
+    chunks=chunks,
+    source="sample.pdf"
+)
 
-    print(f"\n{'=' * 60}")
-    print(f"Chunk {index + 1}")
-    print(f"{'=' * 60}")
+print("✅ Documents Created Successfully!")
 
-    print(chunk)
+# -----------------------------
+# Generate Embeddings
+# -----------------------------
+documents = generate_embeddings(
+    client=client,
+    documents=documents
+)
+
+print("\n🎉 Embeddings Generated Successfully!")
+
+# -----------------------------
+# Display First Document
+# -----------------------------
+first_document = documents[0]
+
+print("\n" + "=" * 70)
+print("FIRST DOCUMENT")
+print("=" * 70)
+
+print(f"\nID : {first_document.id}")
+
+print("\nMetadata:")
+print(first_document.metadata)
+
+print("\nText:")
+print(first_document.text[:250], "...")
+
+print("\nEmbedding Length:")
+print(len(first_document.embedding))
+
+print("\nFirst 10 Values:")
+print(first_document.embedding[:10])
