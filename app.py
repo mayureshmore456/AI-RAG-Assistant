@@ -6,6 +6,7 @@ from utils.pdf_loader import load_pdf
 from utils.chunker import create_chunks
 from utils.document_factory import create_documents
 from utils.embeddings import generate_embeddings
+from utils.vector_store import VectorStore
 
 # -----------------------------
 # Load Environment Variables
@@ -46,37 +47,68 @@ documents = create_documents(
     source="sample.pdf"
 )
 
-print("✅ Documents Created Successfully!")
-
 # -----------------------------
-# Generate Embeddings
+# Generate Document Embeddings
 # -----------------------------
 documents = generate_embeddings(
     client=client,
     documents=documents
 )
 
-print("\n🎉 Embeddings Generated Successfully!")
+print("\n✅ Document Embeddings Generated!")
 
 # -----------------------------
-# Display First Document
+# Create Vector Store
 # -----------------------------
-first_document = documents[0]
+vector_store = VectorStore()
 
-print("\n" + "=" * 70)
-print("FIRST DOCUMENT")
-print("=" * 70)
+vector_store.add_documents(documents)
 
-print(f"\nID : {first_document.id}")
+print(f"📚 Vector Store contains {vector_store.count()} documents.")
 
-print("\nMetadata:")
-print(first_document.metadata)
+# ==========================================================
+# USER QUESTION
+# ==========================================================
 
-print("\nText:")
-print(first_document.text[:250], "...")
+question = input("\n💬 Ask a question: ")
 
-print("\nEmbedding Length:")
-print(len(first_document.embedding))
+print("\n🧠 Generating Question Embedding...")
 
-print("\nFirst 10 Values:")
-print(first_document.embedding[:10])
+response = client.models.embed_content(
+    model="gemini-embedding-001",
+    contents=question
+)
+
+query_embedding = response.embeddings[0].values
+
+print("✅ Question Embedded!")
+
+# ==========================================================
+# SEARCH
+# ==========================================================
+
+results = vector_store.search(
+    query_embedding=query_embedding,
+    top_k=3
+)
+
+# ==========================================================
+# DISPLAY RESULTS
+# ==========================================================
+
+print("\n" + "=" * 80)
+print("TOP MATCHING DOCUMENTS")
+print("=" * 80)
+
+for index, result in enumerate(results, start=1):
+
+    document = result["document"]
+    score = result["score"]
+
+    print(f"\nResult #{index}")
+    print(f"Similarity Score : {score:.4f}")
+    print(f"Source           : {document.metadata['source']}")
+
+    print("\nText Preview:\n")
+    print(document.text[:300])
+    print("-" * 80)
