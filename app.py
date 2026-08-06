@@ -7,6 +7,7 @@ from utils.chunker import create_chunks
 from utils.document_factory import create_documents
 from utils.embeddings import generate_embeddings
 from utils.vector_store import VectorStore
+from utils.prompt_builder import build_prompt
 
 # -----------------------------
 # Load Environment Variables
@@ -61,7 +62,6 @@ print("\n✅ Document Embeddings Generated!")
 # Create Vector Store
 # -----------------------------
 vector_store = VectorStore()
-
 vector_store.add_documents(documents)
 
 print(f"📚 Vector Store contains {vector_store.count()} documents.")
@@ -72,6 +72,9 @@ print(f"📚 Vector Store contains {vector_store.count()} documents.")
 
 question = input("\n💬 Ask a question: ")
 
+# -----------------------------
+# Generate Question Embedding
+# -----------------------------
 print("\n🧠 Generating Question Embedding...")
 
 response = client.models.embed_content(
@@ -81,34 +84,38 @@ response = client.models.embed_content(
 
 query_embedding = response.embeddings[0].values
 
-print("✅ Question Embedded!")
+print("✅ Question Embedding Generated!")
 
-# ==========================================================
-# SEARCH
-# ==========================================================
-
-results = vector_store.search(
+# -----------------------------
+# Retrieve Relevant Documents
+# -----------------------------
+search_results = vector_store.search(
     query_embedding=query_embedding,
     top_k=3
 )
 
-# ==========================================================
-# DISPLAY RESULTS
-# ==========================================================
+print("✅ Retrieved Top 3 Relevant Chunks!")
 
-print("\n" + "=" * 80)
-print("TOP MATCHING DOCUMENTS")
+# -----------------------------
+# Build Prompt
+# -----------------------------
+prompt = build_prompt(
+    question=question,
+    search_results=search_results
+)
+
+# -----------------------------
+# Generate AI Answer
+# -----------------------------
+print("\n🤖 Gemini is thinking...\n")
+
+response = client.models.generate_content(
+    model="gemini-3.1-flash-lite",
+    contents=prompt
+)
+
+print("=" * 80)
+print("🤖 AI ANSWER")
 print("=" * 80)
 
-for index, result in enumerate(results, start=1):
-
-    document = result["document"]
-    score = result["score"]
-
-    print(f"\nResult #{index}")
-    print(f"Similarity Score : {score:.4f}")
-    print(f"Source           : {document.metadata['source']}")
-
-    print("\nText Preview:\n")
-    print(document.text[:300])
-    print("-" * 80)
+print(response.text)
