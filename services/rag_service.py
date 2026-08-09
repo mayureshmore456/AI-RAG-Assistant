@@ -13,18 +13,23 @@ from config import (
 
 class RAGService:
     """
-    Coordinates the document processing and retrieval pipeline.
+    Handles document ingestion and retrieval.
     """
 
     def __init__(self, client):
         self.client = client
         self.vector_store = VectorStore()
+        self.documents_loaded = False
 
     def process_pdf(self, file_path):
         """
-        Load a PDF, split it into chunks, create documents,
-        generate embeddings, and store them.
+        Process a PDF and store its embeddings.
+
+        This should happen when a document is uploaded,
+        not every time the user asks a question.
         """
+
+        print("\n📄 Processing PDF...")
 
         text, total_pages = load_pdf(file_path)
 
@@ -34,10 +39,14 @@ class RAGService:
             overlap=CHUNK_OVERLAP
         )
 
+        print(f"📦 Created {len(chunks)} chunks.")
+
         documents = create_documents(
             chunks=chunks,
             source=file_path
         )
+
+        print("🧠 Generating document embeddings...")
 
         documents = generate_embeddings(
             client=self.client,
@@ -45,6 +54,10 @@ class RAGService:
         )
 
         self.vector_store.add_documents(documents)
+
+        self.documents_loaded = True
+
+        print("✅ Document embeddings stored.")
 
         return {
             "total_pages": total_pages,
@@ -54,9 +67,18 @@ class RAGService:
 
     def retrieve(self, question, top_k):
         """
-        Generate an embedding for the user's question
-        and retrieve the most relevant documents.
+        Retrieve relevant documents for a question.
+
+        Document embeddings already exist in the vector store.
+        Only the question needs a new embedding.
         """
+
+        if not self.documents_loaded:
+            raise ValueError(
+                "No documents have been loaded into the vector store."
+            )
+
+        print("\n🧠 Generating question embedding...")
 
         response = self.client.models.embed_content(
             model=EMBEDDING_MODEL,
@@ -65,7 +87,11 @@ class RAGService:
 
         query_embedding = response.embeddings[0].values
 
-        return self.vector_store.search(
+        print("🔍 Searching vector store...")
+
+        results = self.vector_store.search(
             query_embedding=query_embedding,
             top_k=top_k
         )
+
+        return results
