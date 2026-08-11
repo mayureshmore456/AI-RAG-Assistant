@@ -1,0 +1,29 @@
+html,
+body,
+#root {
+  margin: 0;
+
+  width: 100%;
+  min-width: 320px;
+
+  min-height: 100vh;
+}
+
+
+body {
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  background: #f7f7f8;
+}
+
+
+button,
+input {
+  font-family: inherit;
+}

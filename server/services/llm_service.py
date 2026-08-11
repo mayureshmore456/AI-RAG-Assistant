@@ -1,4 +1,4 @@
-from config import LLM_MODEL
+from server.config import LLM_MODEL
 
 
 class LLMService:
