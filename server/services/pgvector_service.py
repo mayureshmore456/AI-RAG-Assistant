@@ -14,92 +14,55 @@ class PGVectorService:
     """
 
     def __init__(self):
-
         self.database_url = DATABASE_URL
 
-    # =========================================================
-    # DATABASE CONNECTION
-    # =========================================================
+    # --------------------------------
+    # Database Connection
+    # --------------------------------
 
     def _get_connection(self):
-
-        connection = psycopg.connect(
-            self.database_url
-        )
+        connection = psycopg.connect(self.database_url)
 
         register_vector(connection)
 
         return connection
 
-    # =========================================================
-    # ADD DOCUMENTS
-    # =========================================================
+    # --------------------------------
+    # Add Documents
+    # --------------------------------
 
-    def add_documents(
-        self,
-        documents,
-        source,
-        user_id,
-        filename=None,
-        file_size=None,
-        mime_type="application/pdf"
-    ):
+    def add_documents(self, documents, source, user_id):
+        """
+        Store a document and its chunks for a specific user.
+        """
 
         if not documents:
-            return None
-
-        # -----------------------------------------------------
-        # Use original filename if provided
-        # -----------------------------------------------------
-
-        if filename is None:
-
-            filename = source.split("/")[-1]
-
-        # -----------------------------------------------------
-        # Connect to database
-        # -----------------------------------------------------
+            return
 
         with self._get_connection() as connection:
 
             with connection.cursor() as cursor:
-
-                # -------------------------------------------------
-                # Create parent document
-                # -------------------------------------------------
 
                 cursor.execute(
                     """
                     INSERT INTO documents (
                         user_id,
                         filename,
-                        file_path,
-                        file_size,
-                        mime_type
+                        file_path
                     )
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s)
                     RETURNING id;
                     """,
                     (
                         user_id,
-                        filename,
-                        source,
-                        file_size,
-                        mime_type
+                        source.split("/")[-1],
+                        source
                     )
                 )
 
-                document_id = (
-                    cursor.fetchone()[0]
-                )
+                document_id = cursor.fetchone()[0]
 
-                # -------------------------------------------------
-                # Store chunks and embeddings
-                # -------------------------------------------------
-
-                for index, document in enumerate(
-                    documents
-                ):
+                for index, document in enumerate(documents):
 
                     cursor.execute(
                         """
@@ -115,24 +78,20 @@ class PGVectorService:
                             document_id,
                             document.text,
                             index,
-                            Vector(
-                                document.embedding
-                            )
+                            Vector(document.embedding)
                         )
                     )
 
             connection.commit()
 
-        return str(document_id)
+    # --------------------------------
+    # Count User Documents
+    # --------------------------------
 
-    # =========================================================
-    # COUNT USER CHUNKS
-    # =========================================================
-
-    def count(
-        self,
-        user_id
-    ):
+    def count(self, user_id):
+        """
+        Count only documents belonging to the logged-in user.
+        """
 
         with self._get_connection() as connection:
 
@@ -142,43 +101,31 @@ class PGVectorService:
                     """
                     SELECT COUNT(*)
                     FROM document_chunks dc
-
                     JOIN documents d
                         ON dc.document_id = d.id
-
                     WHERE d.user_id = %s;
                     """,
-                    (
-                        user_id,
-                    )
+                    (user_id,)
                 )
 
                 result = cursor.fetchone()
 
                 return result[0]
 
-    # =========================================================
-    # VECTOR SIMILARITY SEARCH
-    # =========================================================
+    # --------------------------------
+    # Vector Similarity Search
+    # --------------------------------
 
-    def search(
-        self,
-        query_embedding,
-        top_k=3,
-        user_id=None
-    ):
+    def search(self, query_embedding, top_k=3, user_id=None):
+        """
+        Search only documents belonging to the specified user.
+        """
 
-        query_vector = Vector(
-            query_embedding
-        )
+        query_vector = Vector(query_embedding)
 
         with self._get_connection() as connection:
 
             with connection.cursor() as cursor:
-
-                # -------------------------------------------------
-                # Search ONLY current user's documents
-                # -------------------------------------------------
 
                 cursor.execute(
                     """
@@ -210,10 +157,6 @@ class PGVectorService:
                 )
 
                 rows = cursor.fetchall()
-
-        # -----------------------------------------------------
-        # Convert database rows into Documents
-        # -----------------------------------------------------
 
         results = []
 

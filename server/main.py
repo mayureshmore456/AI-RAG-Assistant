@@ -1,5 +1,4 @@
 import os
-import uuid
 
 from dotenv import load_dotenv
 
@@ -24,7 +23,6 @@ from server.services.llm_service import LLMService
 from server.services.user_service import UserService
 from server.services.auth_service import AuthService
 from server.services.chat_service import ChatService
-from server.services.document_service import DocumentService
 
 from server.utils.auth import get_current_user
 from server.utils.prompt_builder import build_prompt
@@ -73,9 +71,7 @@ app.add_middleware(
 # =========================================================
 
 client = genai.Client(
-    api_key=os.getenv(
-        "GEMINI_API_KEY"
-    )
+    api_key=os.getenv("GEMINI_API_KEY")
 )
 
 
@@ -83,13 +79,9 @@ client = genai.Client(
 # SERVICES
 # =========================================================
 
-rag_service = RAGService(
-    client
-)
+rag_service = RAGService(client)
 
-llm_service = LLMService(
-    client
-)
+llm_service = LLMService(client)
 
 user_service = UserService()
 
@@ -97,31 +89,23 @@ auth_service = AuthService()
 
 chat_service = ChatService()
 
-document_service = DocumentService()
-
 
 # =========================================================
 # REQUEST MODELS
 # =========================================================
 
 class RegisterRequest(BaseModel):
-
     name: str
-
     email: str
-
     password: str
 
 
 class LoginRequest(BaseModel):
-
     email: str
-
     password: str
 
 
 class CreateChatRequest(BaseModel):
-
     title: str = "New Chat"
 
 
@@ -142,14 +126,10 @@ def root():
 # =========================================================
 
 @app.post("/auth/register")
-def register(
-    request: RegisterRequest
-):
+def register(request: RegisterRequest):
 
-    existing_user = (
-        user_service.get_user_by_email(
-            request.email
-        )
+    existing_user = user_service.get_user_by_email(
+        request.email
     )
 
     if existing_user is not None:
@@ -176,9 +156,7 @@ def register(
 # =========================================================
 
 @app.post("/auth/login")
-def login(
-    request: LoginRequest
-):
+def login(request: LoginRequest):
 
     user = user_service.authenticate_user(
         email=request.email,
@@ -192,10 +170,8 @@ def login(
             detail="Invalid email or password."
         )
 
-    access_token = (
-        auth_service.create_access_token(
-            user_id=user["id"]
-        )
+    access_token = auth_service.create_access_token(
+        user_id=user["id"]
     )
 
     return {
@@ -212,9 +188,7 @@ def login(
 
 @app.get("/auth/me")
 def get_me(
-    user_id: str = Depends(
-        get_current_user
-    )
+    user_id: str = Depends(get_current_user)
 ):
 
     return {
@@ -229,9 +203,7 @@ def get_me(
 @app.post("/chats")
 def create_chat(
     request: CreateChatRequest,
-    user_id: str = Depends(
-        get_current_user
-    )
+    user_id: str = Depends(get_current_user)
 ):
 
     chat = chat_service.create_chat(
@@ -248,9 +220,7 @@ def create_chat(
 
 @app.get("/chats")
 def get_chats(
-    user_id: str = Depends(
-        get_current_user
-    )
+    user_id: str = Depends(get_current_user)
 ):
 
     chats = chat_service.get_chats(
@@ -269,9 +239,7 @@ def get_chats(
 @app.get("/chats/{chat_id}")
 def get_chat_messages(
     chat_id: str,
-    user_id: str = Depends(
-        get_current_user
-    )
+    user_id: str = Depends(get_current_user)
 ):
 
     chat = chat_service.get_chat(
@@ -284,6 +252,9 @@ def get_chat_messages(
             status_code=404,
             detail="Chat not found."
         )
+
+    # Make sure the chat belongs to
+    # the logged-in user
 
     if chat["user_id"] != user_id:
 
@@ -303,101 +274,18 @@ def get_chat_messages(
 
 
 # =========================================================
-# GET USER DOCUMENTS
-# =========================================================
-
-@app.get("/documents")
-def get_documents(
-    user_id: str = Depends(
-        get_current_user
-    )
-):
-
-    documents = (
-        document_service.get_user_documents(
-            user_id=user_id
-        )
-    )
-
-    return {
-        "documents": documents
-    }
-
-
-# =========================================================
-# GET SINGLE DOCUMENT
-# =========================================================
-
-@app.get("/documents/{document_id}")
-def get_document(
-    document_id: str,
-    user_id: str = Depends(
-        get_current_user
-    )
-):
-
-    document = document_service.get_document(
-        document_id=document_id,
-        user_id=user_id
-    )
-
-    if document is None:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Document not found."
-        )
-
-    return document
-
-
-# =========================================================
-# DELETE DOCUMENT
-# =========================================================
-
-@app.delete("/documents/{document_id}")
-def delete_document(
-    document_id: str,
-    user_id: str = Depends(
-        get_current_user
-    )
-):
-
-    document = (
-        document_service.delete_document(
-            document_id=document_id,
-            user_id=user_id
-        )
-    )
-
-    if document is None:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Document not found."
-        )
-
-    return {
-        "message": "Document deleted successfully.",
-        "document_id": document_id
-    }
-
-
-# =========================================================
 # PDF UPLOAD
 # =========================================================
 
 @app.post("/upload")
 async def upload_pdf(
     file: UploadFile = File(...),
-    user_id: str = Depends(
-        get_current_user
-    )
+    user_id: str = Depends(get_current_user)
 ):
 
-    # -----------------------------------------------------
+    # --------------------------------
     # Validate file type
-    # -----------------------------------------------------
+    # --------------------------------
 
     if file.content_type != "application/pdf":
 
@@ -406,136 +294,55 @@ async def upload_pdf(
             detail="Only PDF files are allowed."
         )
 
-    # -----------------------------------------------------
-    # Validate filename
-    # -----------------------------------------------------
-
-    if not file.filename:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Filename is required."
-        )
-
-    original_filename = os.path.basename(
-        file.filename
-    )
-
-    # -----------------------------------------------------
-    # Read file
-    # -----------------------------------------------------
-
-    content = await file.read()
-
-    if not content:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded file is empty."
-        )
-
-    # -----------------------------------------------------
+    # --------------------------------
     # Create uploads directory
-    # -----------------------------------------------------
+    # --------------------------------
 
     os.makedirs(
         "uploads",
         exist_ok=True
     )
 
-    # -----------------------------------------------------
-    # Create unique physical filename
-    # -----------------------------------------------------
-
-    unique_filename = (
-        f"{uuid.uuid4()}_{original_filename}"
-    )
+    # --------------------------------
+    # Create file path
+    # --------------------------------
 
     file_path = os.path.join(
         "uploads",
-        unique_filename
+        file.filename
     )
 
-    # -----------------------------------------------------
-    # Save PDF
-    # -----------------------------------------------------
+    # --------------------------------
+    # Save uploaded PDF
+    # --------------------------------
 
-    try:
+    with open(
+        file_path,
+        "wb"
+    ) as buffer:
 
-        with open(
-            file_path,
-            "wb"
-        ) as buffer:
+        content = await file.read()
 
-            buffer.write(content)
+        buffer.write(content)
 
-        # -------------------------------------------------
-        # Process PDF
-        # -------------------------------------------------
+    # --------------------------------
+    # Process PDF
+    #
+    # IMPORTANT:
+    # Pass logged-in user's ID
+    # --------------------------------
 
-        result = rag_service.process_pdf(
-            file_path=file_path,
-            user_id=user_id,
-            filename=original_filename,
-            file_size=len(content),
-            mime_type=file.content_type
-        )
-
-    except Exception as error:
-
-        # -------------------------------------------------
-        # Remove physical file if processing fails
-        # -------------------------------------------------
-
-        if os.path.exists(
-            file_path
-        ):
-
-            os.remove(
-                file_path
-            )
-
-        print(
-            f"PDF processing error: {error}"
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Failed to process PDF. "
-                f"{str(error)}"
-            )
-        )
-
-    # -----------------------------------------------------
-    # Return result
-    # -----------------------------------------------------
+    result = rag_service.process_pdf(
+        file_path=file_path,
+        user_id=user_id
+    )
 
     return {
-        "message": (
-            "PDF uploaded and "
-            "processed successfully."
-        ),
-
-        "document_id": result[
-            "document_id"
-        ],
-
-        "filename": original_filename,
-
-        "pages": result[
-            "total_pages"
-        ],
-
-        "chunks": result[
-            "total_chunks"
-        ],
-
-        "documents": result[
-            "total_documents"
-        ],
-
-        "file_size": len(content)
+        "message": "PDF uploaded and processed successfully.",
+        "filename": file.filename,
+        "pages": result["total_pages"],
+        "chunks": result["total_chunks"],
+        "documents": result["total_documents"]
     }
 
 
@@ -547,21 +354,17 @@ async def upload_pdf(
 def chat(
     question: str,
     chat_id: str = None,
-    user_id: str = Depends(
-        get_current_user
-    )
+    user_id: str = Depends(get_current_user)
 ):
 
-    # -----------------------------------------------------
-    # Verify chat ownership
-    # -----------------------------------------------------
+    # =====================================================
+    # VERIFY CHAT OWNERSHIP
+    # =====================================================
 
     if chat_id is not None:
 
-        existing_chat = (
-            chat_service.get_chat(
-                chat_id
-            )
+        existing_chat = chat_service.get_chat(
+            chat_id
         )
 
         if existing_chat is None:
@@ -571,31 +374,24 @@ def chat(
                 detail="Chat not found."
             )
 
-        if (
-            existing_chat["user_id"]
-            != user_id
-        ):
+        if existing_chat["user_id"] != user_id:
 
             raise HTTPException(
                 status_code=403,
-                detail=(
-                    "You do not have access "
-                    "to this chat."
-                )
+                detail="You do not have access to this chat."
             )
 
-    # -----------------------------------------------------
-    # Retrieve only current user's documents
-    # -----------------------------------------------------
+
+    # =====================================================
+    # RETRIEVE USER'S DOCUMENT CHUNKS
+    # =====================================================
 
     try:
 
-        search_results = (
-            rag_service.retrieve(
-                question=question,
-                top_k=TOP_K,
-                user_id=user_id
-            )
+        search_results = rag_service.retrieve(
+            question=question,
+            top_k=TOP_K,
+            user_id=user_id
         )
 
     except ValueError as error:
@@ -605,28 +401,29 @@ def chat(
             detail=str(error)
         )
 
-    # -----------------------------------------------------
-    # Build prompt
-    # -----------------------------------------------------
+
+    # =====================================================
+    # BUILD PROMPT
+    # =====================================================
 
     prompt = build_prompt(
         question=question,
         search_results=search_results
     )
 
-    # -----------------------------------------------------
-    # Generate answer
-    # -----------------------------------------------------
 
-    answer = (
-        llm_service.generate_answer(
-            prompt
-        )
+    # =====================================================
+    # GENERATE AI ANSWER
+    # =====================================================
+
+    answer = llm_service.generate_answer(
+        prompt
     )
 
-    # -----------------------------------------------------
-    # Save messages
-    # -----------------------------------------------------
+
+    # =====================================================
+    # SAVE MESSAGES
+    # =====================================================
 
     saved_user_message = None
 
@@ -634,28 +431,27 @@ def chat(
 
     if chat_id is not None:
 
-        saved_user_message = (
-            chat_service.save_message(
-                chat_id=chat_id,
-                role="user",
-                content=question
-            )
+        saved_user_message = chat_service.save_message(
+            chat_id=chat_id,
+            role="user",
+            content=question
         )
 
-        saved_assistant_message = (
-            chat_service.save_message(
-                chat_id=chat_id,
-                role="assistant",
-                content=answer
-            )
+        saved_assistant_message = chat_service.save_message(
+            chat_id=chat_id,
+            role="assistant",
+            content=answer
         )
+
+
+    # =====================================================
+    # RESPONSE
+    # =====================================================
 
     return {
         "question": question,
         "answer": answer,
         "chat_id": chat_id,
         "user_message": saved_user_message,
-        "assistant_message": (
-            saved_assistant_message
-        )
+        "assistant_message": saved_assistant_message
     }
