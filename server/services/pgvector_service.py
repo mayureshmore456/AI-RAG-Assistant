@@ -1,3 +1,4 @@
+import os
 import psycopg
 
 from pgvector import Vector
@@ -16,20 +17,22 @@ class PGVectorService:
     def __init__(self):
         self.database_url = DATABASE_URL
 
-    # --------------------------------
-    # Database Connection
-    # --------------------------------
+    # =========================================================
+    # DATABASE CONNECTION
+    # =========================================================
 
     def _get_connection(self):
-        connection = psycopg.connect(self.database_url)
+        connection = psycopg.connect(
+            self.database_url
+        )
 
         register_vector(connection)
 
         return connection
 
-    # --------------------------------
-    # Add Documents
-    # --------------------------------
+    # =========================================================
+    # ADD DOCUMENTS
+    # =========================================================
 
     def add_documents(self, documents, source, user_id):
         """
@@ -37,11 +40,17 @@ class PGVectorService:
         """
 
         if not documents:
-            return
+            return None
+
+        filename = os.path.basename(source)
 
         with self._get_connection() as connection:
 
             with connection.cursor() as cursor:
+
+                # ---------------------------------------------
+                # Create document record
+                # ---------------------------------------------
 
                 cursor.execute(
                     """
@@ -55,12 +64,16 @@ class PGVectorService:
                     """,
                     (
                         user_id,
-                        source.split("/")[-1],
+                        filename,
                         source
                     )
                 )
 
                 document_id = cursor.fetchone()[0]
+
+                # ---------------------------------------------
+                # Store document chunks + embeddings
+                # ---------------------------------------------
 
                 for index, document in enumerate(documents):
 
@@ -84,13 +97,15 @@ class PGVectorService:
 
             connection.commit()
 
-    # --------------------------------
-    # Count User Documents
-    # --------------------------------
+        return str(document_id)
+
+    # =========================================================
+    # COUNT USER DOCUMENTS
+    # =========================================================
 
     def count(self, user_id):
         """
-        Count only documents belonging to the logged-in user.
+        Count chunks belonging to documents owned by the user.
         """
 
         with self._get_connection() as connection:
@@ -101,8 +116,10 @@ class PGVectorService:
                     """
                     SELECT COUNT(*)
                     FROM document_chunks dc
+
                     JOIN documents d
                         ON dc.document_id = d.id
+
                     WHERE d.user_id = %s;
                     """,
                     (user_id,)
@@ -112,16 +129,18 @@ class PGVectorService:
 
                 return result[0]
 
-    # --------------------------------
-    # Vector Similarity Search
-    # --------------------------------
+    # =========================================================
+    # VECTOR SIMILARITY SEARCH
+    # =========================================================
 
-    def search(self, query_embedding, top_k=3, user_id=None):
+    def search(self, query_embedding, top_k, user_id):
         """
         Search only documents belonging to the specified user.
         """
 
-        query_vector = Vector(query_embedding)
+        query_vector = Vector(
+            query_embedding
+        )
 
         with self._get_connection() as connection:
 
@@ -131,6 +150,7 @@ class PGVectorService:
                     """
                     SELECT
                         dc.id,
+                        dc.document_id,
                         dc.chunk_text,
                         dc.chunk_index,
                         dc.embedding <=> %s AS distance,
@@ -163,18 +183,20 @@ class PGVectorService:
         for row in rows:
 
             document = Document(
-                text=row[1],
+                text=row[2],
                 metadata={
-                    "source": row[5],
-                    "filename": row[4],
-                    "chunk_id": row[2]
+                    "document_id": str(row[1]),
+                    "source": row[6],
+                    "filename": row[5],
+                    "chunk_id": row[0],
+                    "chunk_index": row[3]
                 }
             )
 
             results.append(
                 {
                     "document": document,
-                    "score": 1 - row[3]
+                    "score": 1 - row[4]
                 }
             )
 

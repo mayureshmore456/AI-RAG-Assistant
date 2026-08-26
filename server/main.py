@@ -1,4 +1,5 @@
 import os
+import uuid
 
 from dotenv import load_dotenv
 
@@ -23,6 +24,7 @@ from server.services.llm_service import LLMService
 from server.services.user_service import UserService
 from server.services.auth_service import AuthService
 from server.services.chat_service import ChatService
+from server.services.document_service import DocumentService
 
 from server.utils.auth import get_current_user
 from server.utils.prompt_builder import build_prompt
@@ -52,16 +54,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
-
     allow_credentials=True,
-
     allow_methods=["*"],
-
     allow_headers=["*"],
 )
 
@@ -89,6 +87,8 @@ auth_service = AuthService()
 
 chat_service = ChatService()
 
+document_service = DocumentService()
+
 
 # =========================================================
 # REQUEST MODELS
@@ -107,6 +107,10 @@ class LoginRequest(BaseModel):
 
 class CreateChatRequest(BaseModel):
     title: str = "New Chat"
+
+
+class UpdateChatTitleRequest(BaseModel):
+    title: str
 
 
 # =========================================================
@@ -253,9 +257,6 @@ def get_chat_messages(
             detail="Chat not found."
         )
 
-    # Make sure the chat belongs to
-    # the logged-in user
-
     if chat["user_id"] != user_id:
 
         raise HTTPException(
@@ -274,8 +275,61 @@ def get_chat_messages(
 
 
 # =========================================================
+# UPDATE CHAT TITLE
+# =========================================================
+
+@app.patch("/chats/{chat_id}/title")
+def update_chat_title(
+    chat_id: str,
+    request: UpdateChatTitleRequest,
+    user_id: str = Depends(get_current_user)
+):
+
+    chat = chat_service.get_chat(
+        chat_id
+    )
+
+    if chat is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Chat not found."
+        )
+
+    if chat["user_id"] != user_id:
+
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this chat."
+        )
+
+    title = request.title.strip()
+
+    if not title:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Chat title cannot be empty."
+        )
+
+    if len(title) > 100:
+
+        title = title[:100]
+
+    updated_chat = chat_service.update_chat_title(
+        chat_id=chat_id,
+        title=title
+    )
+
+    return updated_chat
+
+
+# =========================================================
 # PDF UPLOAD
 # =========================================================
+
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+
 
 @app.post("/upload")
 async def upload_pdf(
@@ -283,9 +337,9 @@ async def upload_pdf(
     user_id: str = Depends(get_current_user)
 ):
 
-    # --------------------------------
-    # Validate file type
-    # --------------------------------
+    # =====================================================
+    # VALIDATE FILE TYPE
+    # =====================================================
 
     if file.content_type != "application/pdf":
 
@@ -294,55 +348,238 @@ async def upload_pdf(
             detail="Only PDF files are allowed."
         )
 
-    # --------------------------------
-    # Create uploads directory
-    # --------------------------------
+    # =====================================================
+    # VALIDATE FILENAME
+    # =====================================================
 
-    os.makedirs(
-        "uploads",
-        exist_ok=True
-    )
+    if not file.filename:
 
-    # --------------------------------
-    # Create file path
-    # --------------------------------
+        raise HTTPException(
+            status_code=400,
+            detail="A filename is required."
+        )
 
-    file_path = os.path.join(
-        "uploads",
+    original_filename = os.path.basename(
         file.filename
     )
 
-    # --------------------------------
-    # Save uploaded PDF
-    # --------------------------------
+    if not original_filename.lower().endswith(".pdf"):
 
-    with open(
-        file_path,
-        "wb"
-    ) as buffer:
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are allowed."
+        )
 
-        content = await file.read()
+    # =====================================================
+    # CREATE UPLOAD DIRECTORY
+    # =====================================================
 
-        buffer.write(content)
+    upload_directory = "uploads"
 
-    # --------------------------------
-    # Process PDF
-    #
-    # IMPORTANT:
-    # Pass logged-in user's ID
-    # --------------------------------
+    os.makedirs(
+        upload_directory,
+        exist_ok=True
+    )
 
-    result = rag_service.process_pdf(
-        file_path=file_path,
+    # =====================================================
+    # GENERATE SAFE SERVER-SIDE FILENAME
+    # =====================================================
+
+    stored_filename = (
+        f"{uuid.uuid4()}.pdf"
+    )
+
+    file_path = os.path.join(
+        upload_directory,
+        stored_filename
+    )
+
+    # =====================================================
+    # SAVE FILE WITH SIZE LIMIT
+    # =====================================================
+
+    total_size = 0
+
+    try:
+
+        with open(
+            file_path,
+            "wb"
+        ) as buffer:
+
+            while True:
+
+                chunk = await file.read(
+                    1024 * 1024
+                )
+
+                if not chunk:
+                    break
+
+                total_size += len(chunk)
+
+                if total_size > MAX_UPLOAD_SIZE:
+
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            "PDF file is too large. "
+                            "Maximum size is 10 MB."
+                        )
+                    )
+
+                buffer.write(chunk)
+
+    except HTTPException:
+
+        if os.path.exists(file_path):
+
+            try:
+                os.remove(file_path)
+
+            except OSError:
+                pass
+
+        raise
+
+    except Exception as error:
+
+        if os.path.exists(file_path):
+
+            try:
+                os.remove(file_path)
+
+            except OSError:
+                pass
+
+        print(
+            f"File upload error: {error}"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save uploaded file."
+        )
+
+    finally:
+
+        await file.close()
+
+    # =====================================================
+    # PROCESS PDF
+    # =====================================================
+
+    try:
+
+        result = rag_service.process_pdf(
+            file_path=file_path,
+            user_id=user_id
+        )
+
+    except Exception as error:
+
+        if os.path.exists(file_path):
+
+            try:
+                os.remove(file_path)
+
+            except OSError:
+                pass
+
+        print(
+            f"PDF processing error: {error}"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process PDF."
+        )
+
+    # =====================================================
+    # RESPONSE
+    # =====================================================
+
+    return {
+        "message": (
+            "PDF uploaded and processed successfully."
+        ),
+        "filename": original_filename,
+        "pages": result["total_pages"],
+        "chunks": result["total_chunks"],
+        "documents": result["total_documents"]
+    }
+
+
+# =========================================================
+# GET USER DOCUMENTS
+# =========================================================
+
+@app.get("/documents")
+def get_documents(
+    user_id: str = Depends(get_current_user)
+):
+
+    documents = document_service.get_user_documents(
         user_id=user_id
     )
 
     return {
-        "message": "PDF uploaded and processed successfully.",
-        "filename": file.filename,
-        "pages": result["total_pages"],
-        "chunks": result["total_chunks"],
-        "documents": result["total_documents"]
+        "documents": documents
+    }
+
+
+# =========================================================
+# GET SINGLE DOCUMENT
+# =========================================================
+
+@app.get("/documents/{document_id}")
+def get_document(
+    document_id: str,
+    user_id: str = Depends(get_current_user)
+):
+
+    document = document_service.get_document(
+        document_id=document_id,
+        user_id=user_id
+    )
+
+    if document is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found."
+        )
+
+    return {
+        "document": document
+    }
+
+
+# =========================================================
+# DELETE DOCUMENT
+# =========================================================
+
+@app.delete("/documents/{document_id}")
+def delete_document(
+    document_id: str,
+    user_id: str = Depends(get_current_user)
+):
+
+    document = document_service.delete_document(
+        document_id=document_id,
+        user_id=user_id
+    )
+
+    if document is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found."
+        )
+
+    return {
+        "message": "Document deleted successfully.",
+        "document": document
     }
 
 
@@ -381,9 +618,8 @@ def chat(
                 detail="You do not have access to this chat."
             )
 
-
     # =====================================================
-    # RETRIEVE USER'S DOCUMENT CHUNKS
+    # RETRIEVE USER DOCUMENTS
     # =====================================================
 
     try:
@@ -401,6 +637,16 @@ def chat(
             detail=str(error)
         )
 
+    except Exception as error:
+
+        print(
+            f"RAG retrieval error: {error}"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve relevant documents."
+        )
 
     # =====================================================
     # BUILD PROMPT
@@ -411,15 +657,26 @@ def chat(
         search_results=search_results
     )
 
-
     # =====================================================
     # GENERATE AI ANSWER
     # =====================================================
 
-    answer = llm_service.generate_answer(
-        prompt
-    )
+    try:
 
+        answer = llm_service.generate_answer(
+            prompt
+        )
+
+    except Exception as error:
+
+        print(
+            f"LLM generation error: {error}"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate AI response."
+        )
 
     # =====================================================
     # SAVE MESSAGES
@@ -443,6 +700,39 @@ def chat(
             content=answer
         )
 
+    # =====================================================
+    # BUILD SOURCE INFORMATION
+    # =====================================================
+
+    sources = []
+
+    for result in search_results:
+
+        document = result["document"]
+
+        metadata = document.metadata or {}
+
+        sources.append(
+            {
+                "document_id": metadata.get(
+                    "document_id"
+                ),
+                "filename": metadata.get(
+                    "filename",
+                    "Uploaded document"
+                ),
+                "chunk_id": metadata.get(
+                    "chunk_id"
+                ),
+                "chunk_index": metadata.get(
+                    "chunk_index"
+                ),
+                "score": round(
+                    result.get("score", 0),
+                    3
+                )
+            }
+        )
 
     # =====================================================
     # RESPONSE
@@ -453,5 +743,6 @@ def chat(
         "answer": answer,
         "chat_id": chat_id,
         "user_message": saved_user_message,
-        "assistant_message": saved_assistant_message
+        "assistant_message": saved_assistant_message,
+        "sources": sources
     }

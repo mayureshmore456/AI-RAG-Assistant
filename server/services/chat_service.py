@@ -12,16 +12,16 @@ class ChatService:
     def __init__(self):
         self.database_url = DATABASE_URL
 
-    # --------------------------------
-    # Database Connection
-    # --------------------------------
+    # =========================================================
+    # DATABASE CONNECTION
+    # =========================================================
 
     def _get_connection(self):
         return psycopg.connect(self.database_url)
 
-    # --------------------------------
-    # Create Chat
-    # --------------------------------
+    # =========================================================
+    # CREATE CHAT
+    # =========================================================
 
     def create_chat(self, user_id=None, title="New Chat"):
 
@@ -36,7 +36,7 @@ class ChatService:
                         title
                     )
                     VALUES (%s, %s)
-                    RETURNING id, title, created_at, updated_at;
+                    RETURNING id, user_id, title, created_at, updated_at;
                     """,
                     (
                         user_id,
@@ -50,18 +50,73 @@ class ChatService:
 
         return {
             "id": str(chat[0]),
-            "title": chat[1],
-            "created_at": chat[2],
-            "updated_at": chat[3]
+            "user_id": (
+                str(chat[1])
+                if chat[1] is not None
+                else None
+            ),
+            "title": chat[2],
+            "created_at": chat[3],
+            "updated_at": chat[4]
         }
 
-    # --------------------------------
-    # Save Message
-    # --------------------------------
+    # =========================================================
+    # UPDATE CHAT TITLE
+    # =========================================================
+
+    def update_chat_title(self, chat_id, title):
+
+        with self._get_connection() as connection:
+
+            with connection.cursor() as cursor:
+
+                cursor.execute(
+                    """
+                    UPDATE chats
+                    SET
+                        title = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING
+                        id,
+                        user_id,
+                        title,
+                        created_at,
+                        updated_at;
+                    """,
+                    (
+                        title,
+                        chat_id
+                    )
+                )
+
+                chat = cursor.fetchone()
+
+            connection.commit()
+
+        if chat is None:
+            return None
+
+        return {
+            "id": str(chat[0]),
+            "user_id": (
+                str(chat[1])
+                if chat[1] is not None
+                else None
+            ),
+            "title": chat[2],
+            "created_at": chat[3],
+            "updated_at": chat[4]
+        }
+
+    # =========================================================
+    # SAVE MESSAGE
+    # =========================================================
 
     def save_message(self, chat_id, role, content):
 
         if role not in ["user", "assistant"]:
+
             raise ValueError(
                 "Role must be 'user' or 'assistant'."
             )
@@ -78,7 +133,12 @@ class ChatService:
                         content
                     )
                     VALUES (%s, %s, %s)
-                    RETURNING id, chat_id, role, content, created_at;
+                    RETURNING
+                        id,
+                        chat_id,
+                        role,
+                        content,
+                        created_at;
                     """,
                     (
                         chat_id,
@@ -89,7 +149,7 @@ class ChatService:
 
                 message = cursor.fetchone()
 
-                # Update chat's updated_at timestamp
+                # Update chat activity
                 cursor.execute(
                     """
                     UPDATE chats
@@ -109,9 +169,9 @@ class ChatService:
             "created_at": message[4]
         }
 
-    # --------------------------------
-    # Get Chat Messages
-    # --------------------------------
+    # =========================================================
+    # GET CHAT MESSAGES
+    # =========================================================
 
     def get_messages(self, chat_id):
 
@@ -152,9 +212,9 @@ class ChatService:
 
         return messages
 
-    # --------------------------------
-    # Get User Chats
-    # --------------------------------
+    # =========================================================
+    # GET USER CHATS
+    # =========================================================
 
     def get_chats(self, user_id=None):
 
@@ -216,9 +276,9 @@ class ChatService:
 
         return chats
 
-    # --------------------------------
-    # Get Single Chat
-    # --------------------------------
+    # =========================================================
+    # GET SINGLE CHAT
+    # =========================================================
 
     def get_chat(self, chat_id):
 

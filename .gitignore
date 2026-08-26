@@ -1,8 +1,23 @@
+# Python
 venv/
-.env
 __pycache__/
-*.pycuploads/
+*.pyc
+*.pyo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Uploaded files / local data
+uploads/
 data/
 
-# Uploaded PDFs
-uploads/
+# Node
+client/node_modules/
+client/dist/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
