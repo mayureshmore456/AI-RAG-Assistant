@@ -1,18 +1,18 @@
+from google import genai
 from server.config import EMBEDDING_MODEL
 
 
-def generate_embeddings(client, documents):
-    """
-    Generate embeddings for all documents.
-    """
+client = genai.Client()
 
-    for document in documents:
 
-        response = client.models.embed_content(
-            model=EMBEDDING_MODEL,
-            contents=document.text
-        )
+def generate_embedding(document):
+    response = client.models.embed_content(
+        model=EMBEDDING_MODEL,
+        contents=document.text,
+        config={
+            "output_dimensionality": 1536
+        }
+    )
 
-        document.embedding = response.embeddings[0].values
-
-    return documents
+    document.embedding = response.embeddings[0].values
+    return document
